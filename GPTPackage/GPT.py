@@ -9,32 +9,54 @@ from struct import unpack
 import pandas as pd
 
 
-def load_gdf(filename, arrays_to_load, elements_to_load=None):
+def load_gdf(filename, arrays_to_load=[]):
+    ''' GDF files contain parameter and array data for each timestep. If 
+    arrays_to_load=[], load_gdf returns non-varying parameters as a 
+    Series object and varying parameters are a DataFrame object. arrays_to_load 
+    specifies a list of lists containing equal length arrays to group into 
+    DataFrames (all arrays in a DataFrame must have same length). For example, 
+    arrays_to_load=[['z','G'], ['freq00','A00']] will return two dataframes in 
+    addition to the constant series object and varying parameter dataframe. 
+    The first contains the particle data 'z' and 'G' while the second contains 
+    the fel mode data 'freq00' and 'A00'.
+    
+    Parameter dataframe structure: 
+        Index: Timestep
+        Columns: Parameter Name
+        
+    Array dataframe structure:
+        MultiIndex: 
+            Level0: Timestep
+            Level1: Array elements (particles or modes from example)
+        Columns: Array Name
+    '''
+    
     encoding = 'windows-1252'
     arrays_dict = {ele:iarr 
-                   for iarr,arr in enumerate(arrays_to_load) 
+                   for iarr, arr in enumerate(arrays_to_load) 
                    for ele in arr }
-    last_element = -1 if elements_to_load is None else elements_to_load[-1]
-    param_df = []
+    
+    # Create containers for data
+    param_cnt = []
+    arrays_cnt = [ [] for _ in range(len(arrays_to_load))]
     arrays = [ {} for _ in range(len(arrays_to_load))]
-    array_dfs = [ [] for _ in range(len(arrays_to_load))]
     
     info, params = {}, {}
     params['level1'] = {}
-    current_element = 1
     elements_stored = 0
     level = 1
 
-    # Using little endian
+
     GDFNAMELEN = 16
     GDFID = 94325877 
-    
     t_ascii = int('0001', 16)
     t_s32 = int('0002', 16)
     t_dbl = int('0003', 16)
     t_nul = int('0010', 16)
 
     with open(filename, 'rb') as f:
+        
+        # Read file header
         info['ID'] = int.from_bytes(f.read(4), 'little')
         info['cretime'] = int.from_bytes(f.read(4), 'little')
         info['creator'] = f.read(GDFNAMELEN).decode(encoding).rstrip('\x00')
@@ -47,43 +69,39 @@ def load_gdf(filename, arrays_to_load, elements_to_load=None):
         info['desmin'] = int.from_bytes(f.read(1), 'little')
         info['dummy'] = int.from_bytes(f.read(2), 'little')
     
-        # Parse data
+        # Read data blocks
         while True:
             name_in_bytes = f.read(GDFNAMELEN)
             name = name_in_bytes.decode(encoding).rstrip('\x00')
+            
+            # Break if no bytes left
             if name_in_bytes == b'':
                 break
                 
+            # Parse info in block header
             block_type = bin(int.from_bytes(f.read(4), 'little'))[2:].zfill(32) #binary
             block_size = int.from_bytes(f.read(4), 'little')
-            
             data_type = int(block_type[-8:], 2)
             start_dir = (block_type[2*8 + 7]=='1')
             end_dir = (block_type[2*8 + 6]=='1')
             data_is_param = (block_type[2*8 + 5]=='1')
             data_is_array = (block_type[2*8 + 4]=='1')
             
+            # If start of directory, increase level
             if start_dir:
                 level +=1
                 params[f'level{level}'] = params[f'level{level-1}']
             
+            # If end of directory, append data and reduce level
             if end_dir:
-                if len(arrays)==0:
-                    if elements_to_load is None:
-                        elements_stored +=1
-                        param_df.append( params[f'level{level}'].copy() )
-                else:
-                    if (elements_to_load is None) or (current_element in elements_to_load):
-                        for df, array in zip(array_dfs, arrays):
-                            df.append(pd.DataFrame(array))
-                        param_df.append( params[f'level{level}'].copy() )
-                        elements_stored +=1
-                        if current_element == last_element:
-                            break
-                    arrays = [ {} for _ in range(len(arrays_to_load))]
-                    current_element = current_element + 1
+                for array_cnt, array in zip(arrays_cnt, arrays):
+                    array_cnt.append(pd.DataFrame(array))
+                param_cnt.append( params[f'level{level}'].copy() )
+                elements_stored +=1
+                arrays = [ {} for _ in range(len(arrays_to_load))]
                 level -= 1
             
+            # When data is a parameter
             if data_is_param:
                 if data_type==t_dbl:
                     value = unpack('d', f.read(8))[0]
@@ -100,6 +118,7 @@ def load_gdf(filename, arrays_to_load, elements_to_load=None):
                     f.close()
                     print('Error: Unknown datatype.')
             
+            # When data is an array
             if data_is_array:
                 if data_type == t_dbl:
                     if block_size%8 != 0:
@@ -114,10 +133,18 @@ def load_gdf(filename, arrays_to_load, elements_to_load=None):
                     f.close()
                     print('Error: Datatype not double')
                     
-    # Create dataframes
-    array_dfs = [pd.concat(df, keys=range(len(df))) for df in array_dfs]
-    param_df = pd.DataFrame(param_df)
-    return param_df, *array_dfs
+    # Create dataframes from containers
+    array_dfs = [pd.concat(array_cnt, keys=range(len(array_cnt))) 
+                 for array_cnt in arrays_cnt]
+    param_df = pd.DataFrame(param_cnt)
+    
+    # Separate constants from param_df
+    constant_tf = (param_df.iloc[0]==param_df).all()
+    constants = param_df.columns[constant_tf]
+    const_series = param_df[constants].iloc[0]
+    param_df.drop(columns=constants, inplace=True)
+    
+    return const_series, param_df, *array_dfs
 
 
 

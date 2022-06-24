@@ -14,23 +14,21 @@ from GPT import load_gdf
 
 # Read GDF file
 arrays_to_load = [['z','G'],['freq00','A00']]
-param, part, fel = load_gdf('fel.gdf', arrays_to_load=arrays_to_load)
-param = param.loc[0] # if values do not change over timesteps
+consts, params, particle, fel = load_gdf('fel.gdf', arrays_to_load=arrays_to_load)
 
 # Aggregation calculations
-counts = part.z.groupby(level=0).count()
-part_grouped = part.groupby(level=0)
-part_means = part_grouped.mean().add_prefix('avg')
-part_stds = part_grouped.std().add_prefix('std')
-
+counts = particle.z.groupby(level=0).count() # particles at each timestep
+particle_grouped = particle.groupby(level=0) # Group by timestep
+particle_means = particle_grouped.mean().add_prefix('avg')
+particle_stds = particle_grouped.std().add_prefix('std')
 
 # Construct gdf dataframe
-gdf = pd.concat([counts, part_means, part_stds], axis=1)
+gdf = pd.concat([params, counts, particle_means, particle_stds], axis=1) #concatenate columns
 gdf['eff'] = (gdf.avgG - gdf.avgG[0])/gdf.avgG[0]*100
 
 
 # Misc calculations
-part['z_rel'] = (part.z.unstack() - gdf.avgz).stack() #adds Nan for missing particles
+particle['z_rel'] = (particle.z.unstack() - gdf.avgz).stack() #adds Nan for missing particles
 
 
 
