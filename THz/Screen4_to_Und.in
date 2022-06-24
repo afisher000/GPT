@@ -1,6 +1,5 @@
 GPTLICENSE = 1476385047;
 accuracy(5,5);
-if(!defined(tstart)) tstart = -1;
 screen4pos = 3.191;
 
 # Gun Parameters
@@ -9,12 +8,12 @@ w=2*pi*freq;
 
  
 ########## DEFINE BEAM ################
-setfile("beam","BeamatScreen4.gdf");
+setfile("beam","beam_at_screen4.gdf");
 #spacecharge3dmesh("MeshNtotal",4,4,50); # Make 4 meshes in x-y, sufficient in z
 
 ########## Remove Outliers ############
-rcut=3.0e-3;
-rmax("wcs","z",screen4pos+.01, rcut,0.01);
+#rcut=3.0e-3;
+#rmax("wcs","z",screen4pos+.01, rcut,0.01);
 
 
 ##############    FOCUSING QUADS  ##################
@@ -60,6 +59,7 @@ if (chicane_flag==2)
 
 
 ##############   BOOSTER SOLENOID ####################
+sol2_pos = 4.764;
 Sol2Fac = sol2*0.357-0.0037;
 R2	= 0.0281232; 
 L2	= -0.191784; 
@@ -71,11 +71,6 @@ bzsolenoid("wcs","z",sol2_pos,R2,L2,sqrt(L2*L2+4*R2*R2)/L2/mu0*Sol2Fac);
 #rmax("wcs","z",und_pos-.04, rcut,0.01);
 
 ########## STOP AT UND (period before) ###########
-pp(tstart);
-if (tstart==-1)
-{
-pp(und_pos);
+und_pos = 5.16;
 screen("wcs","I",und_pos-.032);
-}
-if (tstart>-1)
-tout( tstart , tend + .037/3e8 , .01/3e8 ); #Correction for delay in chicane
+tout(screen4pos/3e8, (und_pos+1)/3e8 , .01/3e8 );

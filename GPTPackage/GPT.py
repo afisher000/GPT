@@ -8,17 +8,21 @@ Created on Tue Jun 21 08:55:44 2022
 from struct import unpack
 import pandas as pd
 
-def write_MRfile(file, mr):
-    ''' Writes the numerical data in mr to the file specified.'''
-    with open(file, 'w') as f:
-        for name, value in mr.iteritems():
-            if isinstance(value, int):
-                f.write(f'{name} {value}\n')
-            elif isinstance(value, float):
-                f.write(f'{name} {value:e}\n')
-    return
+def aggregate_gdf(params, particle):
+    ''' Compute aggregations on the particle data. Combine with the params
+    dataframe into a single dataframe where the index is timestep. '''
+    grouped = particle.groupby(level=0)
+    counts = grouped.z.count().rename('counts')
+    means = grouped.mean().add_prefix('avg')
+    stds = grouped.std().add_prefix('std')
+    gdf = pd.concat([params, counts, means, stds], axis=1)
+    
+    # Remove screen outputs (where t is defined)
+    gdf = gdf[gdf.avgt.isnull()]
+    gdf.dropna(axis=1, how='all', inplace=True)
+    return gdf
 
-def load_gdf(filename, arrays_to_load=[]):
+def load_gdf(filename, arrays_to_load=[['x','y','z','Bx','By','Bz','G','t']]):
     ''' GDF files contain parameter and array data for each timestep. If 
     arrays_to_load=[], load_gdf returns non-varying parameters as a 
     Series object and varying parameters are a DataFrame object. arrays_to_load 
@@ -138,6 +142,8 @@ def load_gdf(filename, arrays_to_load=[]):
                     
                     if name in arrays_dict.keys():
                         arrays[arrays_dict[name]][name] = values
+                    elif len(arrays_dict)==0:
+                        arrays[name] = values
                 else:
                     f.close()
                     print('Error: Datatype not double')
