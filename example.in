@@ -1,0 +1,22 @@
+GPTLICENSE = 1476385047;
+accuracy(5,5);
+
+
+########## DEFINE BEAM ################
+nps 	= 1000;
+Qtot 	= -100e-12;
+sigx 	= 1e-3;
+sigy 	= 1e-3;
+sigz 	= 1e-3;
+G 	= 10;
+dG 	= G*.001;
+setparticles("beam",nps,me,qe,Qtot);
+setxdist("beam", "g", 0, sigx, 3, 3);
+setydist("beam", "g", 0, sigy, 3, 3);
+setzdist("beam", "g", 0, sigz, 3, 3);
+setGdist("beam", "g", G, dG, 3, 3);
+
+########### OUTPUT ############
+screen("wcs","I",0.5);
+tout(0,1/c, .01/c);
+
