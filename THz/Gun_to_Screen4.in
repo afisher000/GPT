@@ -1,0 +1,77 @@
+GPTLICENSE = 1476385047;
+accuracy(5,5);
+if(!defined(tstart)) tstart = -1;
+
+# Gun Parameters
+freq=2.856e9;#Hz
+w=2*pi*freq; 
+
+
+# Linac Parameters
+LinacPowerFac=linacgradient*1e6;
+
+# Laser Parameters
+Ratio = 1;  #Ratio of initial distribution dimensions
+ 
+########## DEFINE BEAM ################
+setparticles("beam",nps,me,qe,Qtot) ;
+setxdist("beam","g",0, laser_spotsize,3,3) ;
+setydist("beam","g",0, laser_spotsize*Ratio,3,3) ;
+
+if(beam_flag==0) settdist("beam","g",0, ztime ,3 ,3);
+if(beam_flag==1) settdist("beam","F","GPT Maps/pulsedist.gdf","t","Pt",1,0);
+
+MTE = 0.5;
+E0=MTE/2;  # Inital Mean Transverse Energy
+G = 1-q*E0/(m*c*c); # Corresponding Gamma
+GB = sqrt(G^2-1);
+setGBzdist("beam","g",0,GB,0,3);
+setGBxdist("beam","g",0,GB,3,3);
+setGBydist("beam","g",0,GB,3,3);
+
+#Add space charge effects with the Cathode
+if(Qtot!=0) spacecharge3Dmesh("Cathode");
+
+
+########## GUN ########################
+averagegammabeta = sqrt(gunloopmv)*0.9173+0.4162;
+GunPowerField = (averagegammabeta-0.6154)/0.09468;
+GunPowerFac = -GunPowerField/2.5;
+GunPhaseRad = (90+gunphasedeg)/180*pi;
+map25D_TM("wcs","I","GPT Maps/gunMap2p5D.gdf","R","Z","Er","Ez","H",GunPowerFac,0,GunPhaseRad,w); #No plug recession
+#map1D_TM("wcs","z",0,"GPT Maps/1p25recession_map.gdf","Z","EZ",GunPowerFac, GunPhaseRad,w); #1.25mm plug recession
+
+
+########## BUCKING SOLENOID ##########
+sol1Fac = sol1*0.14585+0.00945;
+R1=0.0253043; L1=0.0953763; o=0.04+.25-0.0005; 
+bzsolenoid("wcs","z",o,R1,L1,sqrt(L1*L1+4*R1*R1)/L1/mu0*sol1Fac);
+
+
+########## LINEARIZER #################
+# Center of linearizer is 62cm earlier than center of linac
+if (xband_tf==1)
+{
+	xband_maxfield 	= 5.25e6;
+	xband_length 	= .109;
+	if (xband_mode==0) xband_phase = -60*pi/180;
+	if (xband_mode==1) xband_phase = -60*pi/180+pi/2;
+	if (xband_mode==2) xband_phase = -60*pi/180+pi;
+	xband_gradient = 1;
+	map1D_TM("wcs","z", 1.72-0.62, "GPT Maps/Xband_cavity1D.gdf","z","Ez", xband_gradient, xband_phase, 2*pi*9.6e9);
+}
+
+
+
+########## LINAC ######################
+gunFreq = 2.856e9;#Hz
+sOmega = 2*pi*gunFreq;
+linacPhaseRad=linacphase/180*pi;
+linacBeg = 1.45-0.317782;           #beginning of field map
+linacEnd = 1.45+0.317756;           #end of field map
+map1D_TM("wcs","z", 1.72, "GPT Maps/ftlinac.gdf","z","Ez",LinacPowerFac,linacPhaseRad,sOmega);
+
+
+########## STOP AT SCREEN 4 ###########
+screen("wcs","I",3.191); # screen4
+tout(0,1.111e-8,.02/3e8);

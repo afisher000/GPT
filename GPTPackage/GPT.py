@@ -8,6 +8,15 @@ Created on Tue Jun 21 08:55:44 2022
 from struct import unpack
 import pandas as pd
 
+def write_MRfile(file, mr):
+    ''' Writes the numerical data in mr to the file specified.'''
+    with open(file, 'w') as f:
+        for name, value in mr.iteritems():
+            if isinstance(value, int):
+                f.write(f'{name} {value}\n')
+            elif isinstance(value, float):
+                f.write(f'{name} {value:e}\n')
+    return
 
 def load_gdf(filename, arrays_to_load=[]):
     ''' GDF files contain parameter and array data for each timestep. If 
@@ -73,8 +82,8 @@ def load_gdf(filename, arrays_to_load=[]):
         while True:
             name_in_bytes = f.read(GDFNAMELEN)
             name = name_in_bytes.decode(encoding).rstrip('\x00')
-            
-            # Break if no bytes left
+
+            # End loop if no bytes left
             if name_in_bytes == b'':
                 break
                 
@@ -143,6 +152,10 @@ def load_gdf(filename, arrays_to_load=[]):
     constants = param_df.columns[constant_tf]
     const_series = param_df[constants].iloc[0]
     param_df.drop(columns=constants, inplace=True)
+    
+    # Add cputime and numderivs to const_series
+    const_series['cputime'] = params['level1']['cputime']
+    const_series['numderivs'] = params['level1']['numderivs']
     
     return const_series, param_df, *array_dfs
 
