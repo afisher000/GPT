@@ -35,7 +35,7 @@ def read_parameters():
         'gunloopmv':57, 
         'gunphasedeg':6*2.856,
         'linacgradient':20,
-        'linacphase':0,
+        'linacphase':48.7,
         'sol1':1.05,
         'quads':[3.4, -6.4, 3.4],
         'sol2':1.5,

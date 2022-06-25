@@ -14,7 +14,7 @@ LinacPowerFac=linacgradient*1e6;
 Ratio = 1;  #Ratio of initial distribution dimensions
  
 ########## DEFINE BEAM ################
-setparticles("beam",nps,me,qe,Qtot) ;
+setparticles("beam",nps,me,qe,qtot) ;
 setxdist("beam","g",0, laser_spotsize,3,3) ;
 setydist("beam","g",0, laser_spotsize*Ratio,3,3) ;
 

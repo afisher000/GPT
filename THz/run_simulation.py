@@ -11,14 +11,21 @@ sys.path.append('C:\\Users\\afisher\\Documents\\GitHub\\GPT\\GPTPackage')
 from Pegasus import simulate_gun_to_screen4, simulate_screen4_to_und
 from GPT import load_gdf, aggregate_gdf
 from params import read_parameters
-import pandas as pd
 
+# Read Parameters
 mr = read_parameters()
-simulate_gun_to_screen4(mr)
-simulate_screen4_to_und(mr)
 
-_, params, particle = load_gdf('gun_to_screen4.gdf')
-gdf = aggregate_gdf(params, particle)
 
-_, params, particle = load_gdf('screen4_to_und.gdf')
-gdf2 = aggregate_gdf(params, particle)
+# Run simulations
+simulate_gun_to_screen4(mr, cmd_output=False)
+simulate_screen4_to_und(mr, cmd_output=False)
+
+
+# Get data
+gdf_files = ['gun_to_screen4.gdf', 'screen4_to_und.gdf']
+gdf, particle = aggregate_gdf(gdf_files)
+
+
+# Plot
+gdf.plot(x='avgz', y=['stdx', 'stdy'])
+

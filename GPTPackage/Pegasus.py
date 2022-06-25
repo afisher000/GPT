@@ -16,22 +16,22 @@ import scipy.optimize
 
 
 
-def simulate_gun_to_screen4(mr, cmd_error=True):
+def simulate_gun_to_screen4(mr, cmd_output=True):
     # Simulate gun to screen4
     write_MRfile('pegasus.mr', mr)
     gpt_call = 'mr -o gun_to_screen4.gdf pegasus.mr gpt gun_to_screen4.in'
     cmd = subprocess.run(gpt_call.split(' '), capture_output=True, encoding='UTF-8')
-    if cmd_error:
+    if cmd_output:
         print(cmd.stderr)
     
     # Create gdf for screen at screen4
     consts, params, particle = load_gdf('gun_to_screen4.gdf')
     particle[particle.t.notnull()].to_csv('temp.txt', sep=' ', index=False)
     cmd = subprocess.run('asci2gdf -o beam_at_screen4.gdf temp.txt'.split(' '), capture_output=True, encoding='UTF-8')
-    if cmd_error:
+    if cmd_output:
         print(cmd.stderr)
     os.remove('temp.txt')
-    
+
     # Update quads
     if mr.estimate_quads:
         G = particle.G[particle.t.notnull()].mean()
@@ -40,19 +40,19 @@ def simulate_gun_to_screen4(mr, cmd_error=True):
     return 
 
 
-def simulate_screen4_to_und(mr, cmd_error=True):
+def simulate_screen4_to_und(mr, cmd_output=True):
     # Simulate screen4 to und
     write_MRfile('pegasus.mr', mr)
     gpt_call = 'mr -o screen4_to_und.gdf pegasus.mr gpt screen4_to_und.in'
     cmd = subprocess.run(gpt_call.split(' '), capture_output=True, encoding='UTF-8')
-    if cmd_error:
+    if cmd_output:
         print(cmd.stderr)
     
     # Create gdf for screen at und entrance
     consts, params, particle = load_gdf('gun_to_screen4.gdf')
     particle[particle.t.notnull()].to_csv('temp.txt', sep=' ', index=False)
     cmd = subprocess.run('asci2gdf -o beam_at_und.gdf temp.txt'.split(' '), capture_output=True, encoding='UTF-8')
-    if cmd_error:
+    if cmd_output:
         print(cmd.stderr)
     os.remove('temp.txt')
     return 
@@ -92,10 +92,10 @@ def get_quad_focusing_matrix(quads, gammabeta, focus):
     z_q5 = .104 + .086 
     z_q6 = .104 + .086 + .085
     
-    for z in np.linspace(0, focus, 100):
-        grad = np.sum([k[0]/2* (np.tanh(b/2*(leff/2-(z-z_q4))) + np.tanh(b/2*(leff/2)+(z-z_q4))),
-                       k[1]/2* (np.tanh(b/2*(leff/2-(z-z_q5))) + np.tanh(b/2*(leff/2)+(z-z_q5))),
-                       k[2]/2* (np.tanh(b/2*(leff/2-(z-z_q6))) + np.tanh(b/2*(leff/2)+(z-z_q6)))])
+    for z in np.arange(0,focus,dz):
+        grad = np.sum([k[0]/2* (np.tanh(b/2*(leff/2-(z-z_q4))) + np.tanh(b/2*(leff/2+(z-z_q4)))),
+                       k[1]/2* (np.tanh(b/2*(leff/2-(z-z_q5))) + np.tanh(b/2*(leff/2+(z-z_q5)))),
+                       k[2]/2* (np.tanh(b/2*(leff/2-(z-z_q6))) + np.tanh(b/2*(leff/2+(z-z_q6))))])
         
         if abs(grad)<1e-4:
             dR = np.array([[1, dz, 0, 0],
@@ -116,12 +116,12 @@ def get_quad_focusing_matrix(quads, gammabeta, focus):
 
 def estimate_quads(s_beam, gammabeta, focus):
     s_beam = np.array(s_beam)
-
+    
     def cost_function(quads, s_beam, gammabeta, focus):
         R = get_quad_focusing_matrix(quads, gammabeta, focus)
-        s_beam_final = R.dot(s_beam).dot(R)
-        sigx = s_beam_final[1,1] #off by square
-        sigy = s_beam_final[3,3]
+        s_beam_final = R.dot(s_beam).dot(R.T)
+        sigx = s_beam_final[0,0] #off by square
+        sigy = s_beam_final[2,2]
         cost = sigx + sigy + abs(sigx-sigy)
         return cost
     

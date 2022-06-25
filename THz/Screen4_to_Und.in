@@ -9,7 +9,7 @@ w=2*pi*freq;
  
 ########## DEFINE BEAM ################
 setfile("beam","beam_at_screen4.gdf");
-#spacecharge3dmesh("MeshNtotal",4,4,50); # Make 4 meshes in x-y, sufficient in z
+#spacecharge3dmesh("MeshNtotal",4,4,50); # Mae 4 meshes in x-y, sufficient in z
 
 ########## Remove Outliers ############
 #rcut=3.0e-3;

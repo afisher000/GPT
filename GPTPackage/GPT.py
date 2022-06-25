@@ -8,19 +8,73 @@ Created on Tue Jun 21 08:55:44 2022
 from struct import unpack
 import pandas as pd
 
-def aggregate_gdf(params, particle):
+def aggregate_gdf(files, skip_particle=False):
     ''' Compute aggregations on the particle data. Combine with the params
-    dataframe into a single dataframe where the index is timestep. '''
-    grouped = particle.groupby(level=0)
-    counts = grouped.z.count().rename('counts')
-    means = grouped.mean().add_prefix('avg')
-    stds = grouped.std().add_prefix('std')
-    gdf = pd.concat([params, counts, means, stds], axis=1)
+    dataframe into a single dataframe where the index is timestep. If file 
+    is a list of files, concatenate the dataframes ensuring no overlap in avgz.'''
     
-    # Remove screen outputs (where t is defined)
-    gdf = gdf[gdf.avgt.isnull()]
-    gdf.dropna(axis=1, how='all', inplace=True)
-    return gdf
+    if not isinstance(files, list):
+        files = [files]
+    
+    gdfs = []
+    particles = []
+    for file in files:
+        _, params, particle = load_gdf(file)
+
+        # Compute aggregations on particle data
+        grouped = particle.groupby(level=0)
+        counts = grouped.z.count().rename('counts')
+        means = grouped.mean().add_prefix('avg')
+        stds = grouped.std().add_prefix('std')
+        gdf = pd.concat([params, counts, means, stds], axis=1)
+        
+        # Remove screen outputs (where t is defined) and append
+        gdf = gdf.loc[gdf.avgt.isnull()].dropna(axis=1, how='all')
+        gdfs.append(gdf)
+        
+        # Do same for particles, optionally skip
+        if not skip_particle:
+            particle = particle[particle.t.isnull()].dropna(axis=1, how='all')
+            particles.append(particle)
+    
+
+    # Concatenate with our without particles
+    if len(particles)==0:
+        return concatenate_gdfs(gdfs)
+    else:
+        return concatenate_gdfs(gdfs, particles)
+    
+
+def concatenate_gdfs(gdfs, particles=[]):
+    ''' Concatenates gdfs. Truncate so no overlaps in avgz. '''
+    # Remove overlaps in avgz
+    for j in range(len(gdfs)-1):
+        overlap = gdfs[j].avgz >= gdfs[j+1].avgz[0]
+        gdfs[j] = gdfs[j][~overlap]
+        if len(particles)>0:
+            p_idx = particles[j].index.get_level_values(level=0).unique()[~overlap]
+            particles[j] = particles[j].loc[(p_idx, slice(None))]
+            
+    # Adjust indices for concatenation
+    idx_start = 0
+    for j,gdf in enumerate(gdfs):
+        new_index = range(idx_start, idx_start+len(gdf))
+        idx_start += len(gdf)
+
+        gdf.index = new_index
+        if len(particles)>0:
+            particles[j].index = particles[j].index.set_levels(new_index, level=0)
+            
+            
+    # Concatenate and return
+    if len(particles)==0:
+        gdf_full = pd.concat(gdfs).reset_index(drop=True)
+        return gdf_full
+    else:
+        gdf_full = pd.concat(gdfs).reset_index(drop=True)
+        particle_full = pd.concat(particles)
+        return gdf_full, particle_full
+
 
 def load_gdf(filename, arrays_to_load=[['x','y','z','Bx','By','Bz','G','t']]):
     ''' GDF files contain parameter and array data for each timestep. If 
@@ -156,7 +210,7 @@ def load_gdf(filename, arrays_to_load=[['x','y','z','Bx','By','Bz','G','t']]):
     # Separate constants from param_df
     constant_tf = (param_df.iloc[0]==param_df).all()
     constants = param_df.columns[constant_tf]
-    const_series = param_df[constants].iloc[0]
+    const_series = param_df.loc[0, constants]
     param_df.drop(columns=constants, inplace=True)
     
     # Add cputime and numderivs to const_series
