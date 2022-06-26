@@ -6,17 +6,13 @@ if(!defined(tstart)) tstart = -1;
 freq=2.856e9;#Hz
 w=2*pi*freq; 
 
-
 # Linac Parameters
 LinacPowerFac=linacgradient*1e6;
-
-# Laser Parameters
-Ratio = 1;  #Ratio of initial distribution dimensions
  
 ########## DEFINE BEAM ################
 setparticles("beam",nps,me,qe,qtot) ;
 setxdist("beam","g",0, laser_spotsize,3,3) ;
-setydist("beam","g",0, laser_spotsize*Ratio,3,3) ;
+setydist("beam","g",0, laser_spotsize,3,3) ;
 
 if(beam_flag==0) settdist("beam","g",0, ztime ,3 ,3);
 if(beam_flag==1) settdist("beam","F","GPT Maps/pulsedist.gdf","t","Pt",1,0);
@@ -73,5 +69,6 @@ map1D_TM("wcs","z", 1.72, "GPT Maps/ftlinac.gdf","z","Ez",LinacPowerFac,linacPha
 
 
 ########## STOP AT SCREEN 4 ###########
-screen("wcs","I",3.191); # screen4
-tout(0,1.111e-8,.02/3e8);
+zminmax("wcs","I", -1, screen4_pos+.1);
+screen("wcs","I",screen4_pos); #screen4
+tout(0,(screen4_pos+1)/3e8,.02/3e8);

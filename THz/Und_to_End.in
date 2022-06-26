@@ -1,8 +1,9 @@
 # THz Amplifier
+GPTLICENSE = 1476385047;
 accuracy(5,5);
-
+und_pos = 5.16;
 ########## SET BEAM DISTRIBUTION ######
-setfile("beam","BeamatUnd.gdf");
+setfile("beam","beam_at_und.gdf");
 #setscale("beam",1,1,1,1,1,1,1,Qscale,1);
 spacecharge3dmesh("MeshNtotal",4,4,50); # Make 4 meshes in x-y, sufficient in z
 
@@ -22,6 +23,7 @@ Ain	= 0;
 dz	= -L/2-lamu-299792458*tstart; #beam starts 1 period before undulator
 sig_f	= 0.07*f0;
 alpha	= 0;
+
 rmax("wcs","z",L/2+und_pos, R, L); #Pipe clearance
 #rmax("wcs","z",L/2+und_pos, R/3, .4);
 
