@@ -1,0 +1,24 @@
+GPTLICENSE = 1476385047;
+accuracy(5,5);
+
+# Gun Parameters
+freq=2.856e9;#Hz
+w=2*pi*freq; 
+
+ 
+########## DEFINE BEAM ################
+setfile("beam","beam_at_boxend.gdf");
+spacecharge3dmesh("MeshNtotal",4,4,50); # Mae 4 meshes in x-y, sufficient in z
+
+
+##############   BOOSTER SOLENOID ####################
+Sol2Fac = sol2*0.357-0.0037;
+R2	= 0.0281232; 
+L2	= -0.191784; 
+bzsolenoid("wcs","z",sol2_pos,R2,L2,sqrt(L2*L2+4*R2*R2)/L2/mu0*Sol2Fac);
+
+
+########## STOP AT UND (period before) ###########
+zminmax("wcs","I",-1, und_pos-.032);
+screen("wcs","I",und_pos-.032);
+tout(tstart, (und_pos+1)/3e8 , .02/3e8 );

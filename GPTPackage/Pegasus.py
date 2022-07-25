@@ -10,99 +10,191 @@ sys.path.append('C:\\Users\\afisher\\Documents\\GitHub\\GPT\\GPTPackage')
 
 import subprocess
 import os
-from GPT import load_gdf
+import GPT
 import numpy as np
 import scipy.optimize
+import pandas as pd
+from scipy.interpolate import griddata
+import scipy.constants as sc
+import shutil
+import time
 
-
-def system(call, mr):
-    ''' Execute subprocess call for GPT'''
-    write_MRfile('pegasus.mr', mr)
-    cmd = subprocess.run(call.split(' '), capture_output=True, encoding='UTF-8')
-    print(cmd.stderr)
+def sum_At00(wfm, dNm=1):
+    ''' Computes At00 from wfm dictionary. wfm must contain data for 'amp', 
+    'k', 'z', 'omega', 't', and 'phi' to compute amp*cos(kz*z-omega*t+phi).
+    We assume frequency info on axis 0 and time/z info on axis 1.'''
     
-    return
+    matrix = dNm * wfm['amp']*np.cos(wfm['kz']*wfm['z'] - wfm['omega']*wfm['t'] + wfm['phi'])
+    return np.sum(matrix, axis=0)
 
+def simulate(mr, start, end, undpass=0):
+    ''' Run a GPT simulation of the Pegasus Beamline. Specify the start and end
+    location (only adjacent pairs in break_locations allowed). The output of
+    the input file should be a tout (where beam is destroyed just after end
+    location) and a screen from which to start the next simulation. '''
     
-
-def simulate_gun_to_screen4(mr):
-    # Simulate gun to screen4
-    gpt_call = 'mr -o gun_to_screen4.gdf pegasus.mr gpt gun_to_screen4.in'
-    system(gpt_call, mr)
+    # Assert start and end are correct locations
+    break_locations = ['gun','screen4','boxend','und','end']
+    assert start in break_locations
+    assert end in break_locations
     
-    # Create gdf for screen at screen4
-    write_screens_to_gdf('gun_to_screen4.gdf', 'beam_at_screen4.gdf')
-
-    # Update quads
-    if mr.estimate_quads:
-        _, _, particle = load_gdf('beam_at_screen4.gdf')
+    
+    # Make estimations before simulation
+    if mr.estimate_quads and start=='screen4':
+        print('Estimating quad values from matrix model')
+        _, _, particle = GPT.load_gdf(f'beam_at_{start}.gdf')
         G = particle.G.mean()
         s_beam = particle[['x','Bx','y','By']].cov().values
-        mr.quads = estimate_quads(s_beam, G, 5.16-3.191)
-    return 
-
-
-def simulate_screen4_to_und(mr):
-    # Simulate screen4 to und
-    _, _, particle = load_gdf('beam_at_screen4.gdf')
-    gpt_call = f'mr -o screen4_to_und.gdf pegasus.mr gpt screen4_to_und.in tstart={particle.t.mean()}'
-    system(gpt_call, mr)
-    
-    # Create gdf for screen at und entrance
-    write_screens_to_gdf('screen4_to_und.gdf', 'beam_at_und.gdf')
-    return 
-
-
-def simulate_und_to_end(mr, passnum=1):
-    # Simulate und to end
-    _, _, particle = load_gdf('beam_at_und.gdf')
-    gpt_call = f'mr -o und_to_end.gdf pegasus.mr gpt und_to_end.in tstart={particle.t.mean()} passnum={passnum}'
-    system(gpt_call, mr)
-    
-    # Create gdf for screen after und entrance
-    write_screens_to_gdf('und_to_end.gdf', 'beam_after_und.gdf')
-    return 
-
-
-def write_screens_to_gdf(gdf_file, dest_files):
-    ''' Find screen outputs in gdf file and save each to locations specified
-    by dest_files. Length of dest_files must match number of screen outputs.'''
-    # Ensure list type
-    if not isinstance(dest_files, list):
-        dest_files = [dest_files]
-    
-    # Loop over screen outputs
-    _, _, particle = load_gdf(gdf_file)
-    
-    if 't' not in particle.columns:
-        print(f'No screen outputs found in {gdf_file}')
-        return
-    
-    for j, p_idx in enumerate(particle.t.dropna().unstack().index):
-        particle.loc[p_idx].to_csv('temp.txt', sep=' ', index=False)
-        cmd = subprocess.run(f'asci2gdf -o {dest_files[j]} temp.txt'.split(' '), capture_output=True, encoding='UTF-8')
-        print(cmd.stderr)
-        os.remove('temp.txt')
+        mr.quads = estimate_quads(s_beam, G, mr.und_pos - mr.screen4_pos)
         
-    return
+    if mr.estimate_chicane and start=='screen4':
+        _, _, particle = GPT.load_gdf(f'beam_at_{start}.gdf')
+        chic_scan = pd.read_csv(os.path.join('Parameter Scans','chicane_parameter_scan.csv'))
+        G = particle.G.mean()
+        R56 = -1/np.polyfit(-3e8*particle.t, particle.G/G, 1)[0]
+        
+        R56 = R56 * .8
+        
+        # From beam energy and R56, get field
+        mr.chicane_field = griddata((chic_scan.G0, chic_scan.R56),
+                                    chic_scan.field,
+                                    (G, R56)).tolist()
+        
+        # From beam energy and field, get offset
+        mr.chicane_offset = griddata((chic_scan.G0, chic_scan.field),
+                                     chic_scan.offset,
+                                     (G, mr.chicane_field)).tolist()
+        print(f'Estimated chicane parameters:\nfield = {mr.chicane_field:.3f} T\noffset = {mr.chicane_offset:.3f} m\n')
+        
+        
+    if mr.estimate_sol2 and start=='boxend':
+        _, _, particle = GPT.load_gdf(f'beam_at_{start}.gdf')
+        G = particle.G.mean()
+        s_beam = particle[['x','Bx','y','By']].cov().values
+        mr.sol2 = estimate_sol2(mr, s_beam, G)
+        print(f'Estimated sol2 value: {mr.sol2:.3f}')
+        
+    if start=='und':
+        mr.undpass = undpass
+        if undpass>0:
+            circulate_pulse(mr, undpass=undpass-1)
+        
+    # Get start time
+    tstart = 0
+    if start!='gun':
+        _, _, particle = GPT.load_gdf(f'beam_at_{start}.gdf')
+        tstart = particle.t.mean()
+    
+    # Run simulation
+    print(f'Starting simulation from {start} to {end}')
+    gpt_call = f'mr -o {start}_to_{end}.gdf pegasus.mr gpt {start}_to_{end}.in tstart={tstart}'
+    GPT.write_MRfile('pegasus.mr', mr)
+    start_timer = time.perf_counter()
+    cmd = subprocess.run(gpt_call.split(' '), capture_output=True, encoding='UTF-8')
+    stop_timer = time.perf_counter()
+    if mr.GPT_warnings:
+        print(cmd.stderr)    
+    print(f'Finished simulation from {start} to {end} in {stop_timer-start_timer:.1f} seconds\n')
+    
+    # Save with undpass for undulator simulations
+    if start=='und':
+        shutil.copy('und_to_end.gdf', f'und_pass{undpass}.gdf')
+        print(f'Copied "und_to_end.gdf" as "und_pass{undpass}.gdf"')
+        
+    # Write screen data to gdf files
+    GPT.write_screens_to_gdf(f'{start}_to_{end}.gdf', f'beam_at_{end}.gdf')
     
 
-def write_MRfile(file, mr):
-    ''' Writes the numerical data in mr to the file specified.'''
-    with open(file, 'w') as f:
-        for name, value in mr.iteritems():
-            if name=='linacphase':
-                value = -value - 139
-            elif name=='quads':
-                f.write(f'I4 {value[0]:e}\n')
-                f.write(f'I5 {value[1]:e}\n')
-                f.write(f'I6 {value[2]:e}\n')
-                
-            if isinstance(value, int):
-                f.write(f'{name} {value}\n')
-            elif isinstance(value, float):
-                f.write(f'{name} {value:e}\n')
+
+    return         
+        
+def calculate_detuning(mr, first_idx=1):
+    # Get averaged data from und_to_end.gdf
+    consts, params, part = GPT.load_gdf('und_to_end.gdf')
+    avg_part = part.groupby(level=0).mean()
+    
+    # Compute slippage up to 1 period in undulator
+    n_timesteps = (avg_part.z<(mr.und_pos+mr.lamu)).sum()
+    avg_part = avg_part.iloc[first_idx:n_timesteps]
+    params = params[first_idx:n_timesteps]
+    
+    dz_electrons = avg_part.z.iloc[-1] - avg_part.z.iloc[0]
+    dz_radiation = mr.vg*(params.time.iloc[-1] - params.time.iloc[0])
+    phase_detuning = mr.kz * (dz_electrons - dz_radiation) - sc.pi/2
+    print(f'Computed phase detuning: {phase_detuning:.2f} radians')
+    return phase_detuning
+
+def circulate_pulse(mr, undpass=0):
+    # =============================================================================
+    # # GPTFEL computes At00 phase as kz*(t00+ct+dz)-wt+phi.
+    # We want phi_und such that kz*(t00+ct_und+dz)-wt_und+phi_und=kz*(t00+ct_end+dz)-wt_end+phi_end
+    # So phi_und = phi_end + c*kz*(t_end-tund) - w*(t_end-t_und)
+    # Shift to peak simply by sending z00->z00+pulse_center_dz
+    # =============================================================================
+    
+    # Read data from end timestamp of simulation (where beam defined)
+    consts, params, part, fel, tfel = GPT.load_gdf(f'und_pass{undpass}.gdf', 
+                                                   arrays_to_load=[['z','G','t', 'Bz'], 
+                                                                   ['freq00','A00','phi00','k00','lam00'], 
+                                                                   ['t00','At00']])
+    part = part[part.t.isna()].drop(columns=['t'])
+    end_idx = part.index.get_level_values(level=0)[-1]
+    t_end = params.time.loc[end_idx]
+    
+    fel = fel.unstack().loc[end_idx].unstack(level=0)
+    tfel = tfel.unstack().loc[end_idx].unstack(level=0)
+    # tfel.plot(x='t00', y='At00', title='Pulse after pass 0')
+    
+    
+    # Read time from start of undulator simulation
+    _, _, part = GPT.load_gdf('beam_at_und.gdf')
+    t_und = part.t.mean()
+    
+    # Compute phi_und (phase for next pass)
+    fel['omega'] = 2*sc.pi*fel.freq00
+    fel['k0'] = fel.omega/sc.c
+    fel['kz'] = np.sqrt( (fel.omega/sc.c)**2 - mr.kp**2 )
+    
+    
+    # Apply dispersion here!
+    
+    pulse_center_dz = tfel.t00[tfel.At00.argmax()]
+    pulse_detuning = calculate_detuning(mr)
+    fel['phi_und'] = fel.phi00 + sc.c*fel.kz*(t_end-t_und) - fel.omega*(t_end-t_und) + fel.kz*pulse_center_dz - pulse_detuning
+    
+    # Sum new At00 to confirm centered correctly
+    # wfm = {}
+    # wfm['amp'] = fel.A00.values.reshape(-1,1)
+    # wfm['kz'] = fel.kz.values.reshape(-1,1)
+    # wfm['z'] = tfel.t00.values.reshape(1,-1) + sc.c*(t_und) + consts.dz
+    # wfm['omega'] = fel.omega.values.reshape(-1,1)
+    # wfm['t'] = t_und
+    # wfm['phi'] = fel.phi_und.values.reshape(-1,1)
+    # tfel['At_und'] = PEG.sum_At00(wfm, dNm=consts.dNm)
+    # tfel.plot(x='t00', y='At_und', title='Pulse for pass 1')
+    
+    
+    # Write to THzPulse.txt
+    with open('THzPulse.txt', 'wt') as f:
+        for idx in range(len(fel)):
+            f.write('%8.8f\n%8.8f\n' % (fel.A00[idx]*consts.dNm, fel.phi_und[idx]))
     return
+
+
+
+def optimize_quads():
+    # Run GPT simulations from screen4 to boxend (large beamsizes will blow up in chicane!)
+    # Read spotsize and divergence from gdf file
+    # Cost function is that beam is same size (and same divergence?)
+    # return optimized values
+    pass
+
+def optimize_sol2():
+    # Run GPT simulations from boxend to undulator
+    # Read spotsize from gdf file
+    # Cost function is minimizing the round beam spotsize (minimize maximum spotsize?)
+    # return optimized values
+    pass
 
 
 def get_quad_focusing_matrix(quads, gammabeta, focus):
@@ -127,10 +219,7 @@ def get_quad_focusing_matrix(quads, gammabeta, focus):
                        k[2]/2* (np.tanh(b/2*(leff/2-(z-z_q6))) + np.tanh(b/2*(leff/2+(z-z_q6))))])
         
         if abs(grad)<1e-4:
-            dR = np.array([[1, dz, 0, 0],
-                           [0, 1, 0, 0],
-                           [0, 0, 1, dz],
-                           [0, 0, 0, 1]])
+            dR = get_drift_matrix(dz)
         else:
             sK = np.sqrt(grad*(1+0j)) # need complex argument
             sKL = sK*dz
@@ -140,8 +229,73 @@ def get_quad_focusing_matrix(quads, gammabeta, focus):
                            [0, 0, sK*np.sinh(sKL), np.cosh(sKL)]])
             
         R = dR.real.dot(R)
-        
     return R
+
+def get_drift_matrix(L):
+    M = np.array([[1,   L,  0,   0],
+                  [0,   1,   0,   0],
+                  [0,   0,   1,   L],
+                  [0,   0,   0,   1]])
+    return M    
+    
+def get_sol2_focusing_matrix(sol2, mr, gammabeta):
+    # https://uspas.fnal.gov/materials/13Duke/SCL_Chap3.pdf
+     
+    #Hardcoded values from GPT implementation
+    mu0 = 4*np.pi*1e-7
+    L = 0.191784
+    R = 0.0281232 
+    Bz = sol2[0]*.357 - .0037 #aka sol2fac
+    nI = Bz * np.sqrt(L**2 + 4*R**2) / mu0 / L
+    bRho = gammabeta*1.70451e-3
+    k = Bz / (2*bRho)
+    kL2 = k*L*2
+   
+    
+    # Drift from box_end to sol2 entrance
+    L1 = mr.sol2_pos - L/2 - mr.boxend_pos
+    drift1 = get_drift_matrix(L1)
+
+    
+    # Solenoid matrices
+    entrancematrix = np.array([[1,   0,   0,   0],
+                               [0,   1,   k,   0],
+                               [0,   0,   1,   0],
+                               [-k,  0,   0,   1]])
+    
+    solmatrix = np.array([[1,   np.sin(kL2)/(2*k),      0,  (1-np.cos(kL2))/(2*k)],
+                          [0,   np.cos(kL2),            0,  np.sin(kL2)],
+                          [0,   (np.cos(kL2)-1)/(2*k),  1,  np.sin(kL2)/(2*k)],
+                          [0,   -np.sin(kL2),           0,  np.cos(kL2)]])
+    
+    exitmatrix = np.array([[1,   0,   0,   0],
+                           [0,   1,   -k,  0],
+                           [0,   0,   1,   0],
+                           [k,   0,   0,   1]])
+    
+    # Drift from sol2 exit to focus
+    L2 = mr.und_pos - (mr.sol2_pos+L/2) - .05
+    drift2 = get_drift_matrix(L2)
+
+    M = drift2.dot(exitmatrix).dot(solmatrix).dot(entrancematrix).dot(drift1)    
+    return M
+    
+    
+
+def estimate_sol2(mr, s_beam, gammabeta):
+    s_beam = np.array(s_beam)
+    def cost_function(sol2, mr, s_beam, gammabeta):
+        M = get_sol2_focusing_matrix(sol2, mr, gammabeta)
+        s_beam_final = M.dot(s_beam).dot(M.T)
+        sigx = s_beam_final[0,0]
+        sigy = s_beam_final[2,2]
+        cost = sigx + sigy + abs(sigx-sigy)
+        return cost
+    
+    opt_sol2 = scipy.optimize.fmin(cost_function, 1,
+                                   args=(mr, s_beam, gammabeta))[0]
+    return opt_sol2
+
 
 def estimate_quads(s_beam, gammabeta, focus):
     s_beam = np.array(s_beam)

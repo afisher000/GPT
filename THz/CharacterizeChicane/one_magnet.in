@@ -1,0 +1,13 @@
+GPTLICENSE = 1476385047;
+accuracy(4,4);
+
+# Load beam from file
+setfile("beam","chirped_beam.gdf");
+
+# Simulate through single magnet
+magnet_file = "C:/Users/afisher/Documents/GitHub/GPT/THz/GPT Maps/Design2.0-M_15.gdf";
+map3D_B("wcs", dx ,0,0.15,1,0,0,0,1,0,  magnet_file, "x","y","z","Bx","By","Bz", field);
+
+# Output
+#tout(0, .3/3e8, .02/3e8); #for troubleshooting
+screen("wcs","I",0.15 + .05/2 + .03/2);

@@ -1,0 +1,58 @@
+GPTLICENSE = 1476385047;
+accuracy(5,5);
+
+# Gun Parameters
+freq=2.856e9;#Hz
+w=2*pi*freq; 
+
+ 
+########## DEFINE BEAM ################
+setfile("beam","beam_at_screen4.gdf");
+spacecharge3dmesh("MeshNtotal",4,4,50); # Make 4 meshes in x-y, sufficient in z
+
+
+##############    FOCUSING QUADS  ##################
+ethickness = 0.0768;
+p1=3.295;
+p2=3.381;
+p3=3.466;
+
+# GPT Quadrupole
+#quadrupole( "wcs","z", p1, ethickness, 0.45*I4,135);
+#quadrupole( "wcs","z", p2, ethickness, 0.45*I5,135);
+#quadrupole( "wcs","z", p3, ethickness, 0.45*I6,135);
+
+# Custom quad_fringe
+quad_fringe( "wcs","z", p1, ethickness, 0.45*I4, 135);
+quad_fringe( "wcs","z", p2, ethickness, 0.45*I5, 135);
+quad_fringe( "wcs","z", p3, ethickness, 0.45*I6, 135);
+
+
+
+
+##############   CHICANE   ###########################
+if (chicane_flag==1) #Ideal chicane
+{
+	Chicane("wcs","z",chicance_pos, chicane_L, chicane_D, chicane_field);
+}
+if (chicane_flag==2)
+{
+	#ECS spec: "name",ox,oy,oz,xx,xy,xz,yx,yy,yz
+	Z1 	= chicane_pos - chicane_D/2-chicane_L-chicane_D-chicane_L/2;
+	Z2 	= chicane_pos - chicane_D/2-chicane_L/2;
+	Z3 	= chicane_pos + chicane_D/2+chicane_L/2;
+	Z4 	= chicane_pos + chicane_D/2+chicane_L+chicane_D+chicane_L/2;
+
+	rmax("wcs","z",Z1-0.1,  3e-3,0.01);
+	chic_file = "GPT Maps/Design2.0-M_15.gdf";
+	map3D_B("wcs",chicane_dx,0,Z1,1,0,0,0,1,0,  chic_file ,"x","y","z","Bx","By","Bz",chicane_field);
+	map3D_B("wcs",2*chicane_offset - chicane_dx,0,Z2,-1,0,0,0,1,0,  chic_file ,"x","y","z","Bx","By","Bz",-chicane_field);	
+	map3D_B("wcs",2*chicane_offset - chicane_dx,0,Z3,-1,0,0,0,-1,0,  chic_file ,"x","y","z","Bx","By","Bz",chicane_field);
+	map3D_B("wcs",chicane_dx,0,Z4,1,0,0,0,-1,0,  chic_file ,"x","y","z","Bx","By","Bz",-1*chicane_field);
+}
+
+
+########## STOP AT BOXEND ###########
+zminmax("wcs","I",-1, boxend_pos);
+screen("wcs","I",boxend_pos);
+tout(tstart, (boxend_pos+1)/3e8 , .02/3e8 );

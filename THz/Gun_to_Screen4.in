@@ -69,6 +69,6 @@ map1D_TM("wcs","z", 1.72, "GPT Maps/ftlinac.gdf","z","Ez",LinacPowerFac,linacPha
 
 
 ########## STOP AT SCREEN 4 ###########
-zminmax("wcs","I", -1, screen4_pos+.1);
+zminmax("wcs","I",-1, screen4_pos);
 screen("wcs","I",screen4_pos); #screen4
 tout(0,(screen4_pos+1)/3e8,.02/3e8);

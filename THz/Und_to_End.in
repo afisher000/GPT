@@ -1,7 +1,7 @@
 # THz Amplifier
 GPTLICENSE = 1476385047;
 accuracy(5,5);
-und_pos = 5.16;
+
 ########## SET BEAM DISTRIBUTION ######
 setfile("beam","beam_at_und.gdf");
 #setscale("beam",1,1,1,1,1,1,1,Qscale,1);
@@ -18,7 +18,6 @@ pol 	= 1;
 L	= nperiods*lamu;
 fmin 	= 0.5*f0;
 fmax 	= 3*f0;
-Nfreq 	= 61;
 Ain	= 0;
 dz	= -L/2-lamu-299792458*tstart; #beam starts 1 period before undulator
 sig_f	= 0.07*f0;
@@ -27,14 +26,14 @@ alpha	= 0;
 rmax("wcs","z",L/2+und_pos, R, L); #Pipe clearance
 #rmax("wcs","z",L/2+und_pos, R/3, .4);
 
-if (passnum==1)
-CircularWGMC_noloss("wcs","z", L/2+und_pos ,R, L, fmin, fmax, Nfreq, Ain, dz, sig_f ,pol, alpha, ""); 
+if (undpass==0 && fel_flag==1)
+CircularWGMC_noloss("wcs","z", L/2+und_pos ,R, L, fmin, fmax, nfreq, Ain, dz, sig_f ,pol, alpha, ""); 
 
-if (passnum>1)
-CircularWGMC_hardcode("wcs","z", L/2+und_pos ,R, L, fmin, fmax, Nfreq, Ain, dz, sig_f ,pol, alpha, ""); 
-
-
+if (undpass>0 && fel_flag==1)
+CircularWGMC_hardcode("wcs","z", L/2+und_pos ,R, L, fmin, fmax, nfreq, Ain, dz, sig_f ,pol, alpha, ""); 
 
 
 ########## OUTPUT PARAMETERS #########
-tout(tstart, tstart + 1.2/3e8, lamu/7/3e8);
+zminmax("wcs","I",-1, end_pos);
+screen("wcs","I",end_pos);
+tout(tstart, (end_pos + 1)/3e8, lamu/7/3e8);

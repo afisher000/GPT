@@ -8,14 +8,15 @@ Created on Sat Jun 25 17:40:03 2022
 import sys
 sys.path.append('C:\\Users\\afisher\\Documents\\GitHub\\GPT\\GPTPackage')
 sys.path.append('C:\\Users\\afisher\\Documents\\GitHub\\GPT\\THz\\THzPackage')
-from Pegasus import simulate_gun_to_screen4, simulate_screen4_to_und
-from GPT import load_gdf, aggregate_gdf
-from THz import parameters
+import Pegasus as PEG
+import GPT
+import THz
 import numpy as np
 import pandas as pd
+import os
 
 # Read Parameters
-mr = parameters()
+mr = THz.parameters()
 
 mr.nps = 100
 mr.qtot = 0
@@ -30,11 +31,11 @@ for phase in phases:
         mr.linacphase = phase
         mr.linacgradient = gradient
         
-        simulate_gun_to_screen4(mr, cmd_output=False)
-        _, _, particle = load_gdf('beam_at_screen4.gdf', arrays_to_load=[['z', 'G']])
+        PEG.simulate_gun_to_screen4(mr, cmd_output=False)
+        _, _, particle = GPT.load_gdf('beam_at_screen4.gdf', arrays_to_load=[['z', 'G']])
     
         data.append([mr.linacphase, mr.linacgradient, particle.G.mean()])
         
 linac = pd.DataFrame(data, columns=['phase','gradient','G'])
-#linac.to_csv('linac_scan.csv', index=False )
+# linac.to_csv(os.path.join('Parameter Scans','linac_scan.csv'), index=False )
     
